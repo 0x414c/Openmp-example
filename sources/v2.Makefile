@@ -2,7 +2,7 @@ default_target: all
 
 .PHONY: clean test
 
-CXX = g++
+CXX = gcc
 CXXFLAGS = -Wpedantic -Wall -Wextra -std=gnu99
 LDFLAGS = -pthread
 SOURCE = main.c

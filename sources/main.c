@@ -93,6 +93,24 @@ mesh_Print (const struct Mesh * mesh, FILE * file, const char * restrict format)
 {
   assert (mesh != NULL);
 
+  fprintf (file, "Mesh{points={");
+  for (size_t time_point = 0; time_point < mesh->time_points; ++ time_point)
+  {
+    for (size_t space_point = 0; space_point < mesh->space_points; ++ space_point)
+    {
+      fprintf (file, format, mesh_Get (mesh, time_point, space_point));
+      fprintf (file, ";");
+    }
+  }
+  fprintf (file, "};space_points=%zu;time_points=%zu;}", mesh->space_points, mesh->time_points);
+}
+
+
+void
+mesh_Print_Formatted (const struct Mesh * mesh, FILE * file, const char * restrict format)
+{
+  assert (mesh != NULL);
+
   for (size_t time_point = 0; time_point < mesh->time_points; ++ time_point)
   {
     for (size_t space_point = 0; space_point < mesh->space_points; ++ space_point)
@@ -109,7 +127,7 @@ mesh_Print (const struct Mesh * mesh, FILE * file, const char * restrict format)
 
 
 void
-mesh_Print_AtTimePoint (const struct Mesh * mesh, FILE * file, const char * restrict format, size_t time_point)
+mesh_Print_Formatted_AtTimePoint (const struct Mesh * mesh, FILE * file, const char * restrict format, size_t time_point)
 {
   assert (mesh != NULL);
 
@@ -134,11 +152,6 @@ typedef real_type temperature_function_type (real_type);
 struct Parameters
 {
   /**
-   * @brief α
-   */
-  real_type diffusivity;
-
-  /**
    * @brief β₀
    */
   real_type boundary_condition_0;
@@ -147,6 +160,11 @@ struct Parameters
    * @brief β₁
    */
   real_type boundary_condition_1;
+
+  /**
+   * @brief α
+   */
+  real_type diffusivity;
 
   /**
    * @brief f(x)
@@ -179,7 +197,7 @@ parameters_Construct (
 {
   assert (initial_condition != NULL);
   assert (time_points > 1);
-  assert (space_points > 0);
+  assert (space_points > 1);
 
   const size_t bytes = sizeof (struct Parameters);
   struct Parameters * const new_parameters = malloc (bytes);
@@ -190,9 +208,9 @@ parameters_Construct (
     return NULL;
   }
 
-  new_parameters->diffusivity = diffusivity;
   new_parameters->boundary_condition_0 = boundary_condition_0;
   new_parameters->boundary_condition_1 = boundary_condition_1;
+  new_parameters->diffusivity = diffusivity;
   new_parameters->initial_condition = initial_condition;
   new_parameters->space_max = space_max;
   new_parameters->space_points = space_points;
@@ -217,9 +235,9 @@ parameters_Print (const struct Parameters * parameters, FILE * output)
 
   fprintf (
     output,
-    "Parameters{diffusivity:%f;boundary_condition_0:%f;boundary_condition_1:%f;time_max:%f;space_max:%f;time_points:%zu;space_points:%zu}",
-    parameters->diffusivity, parameters->boundary_condition_0, parameters->boundary_condition_1, parameters->time_max,
-    parameters->space_max, parameters->time_points, parameters->space_points
+    "Parameters{boundary_condition_0=%f;boundary_condition_1=%f;diffusivity=%f;space_max=%f;space_points=%zu;time_max=%f;time_points=%zu;}",
+    parameters->boundary_condition_0, parameters->boundary_condition_1, parameters->diffusivity,
+    parameters->space_max, parameters->space_points, parameters->time_max, parameters->time_points
   );
 }
 
@@ -258,6 +276,13 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
     const real_type temperature = parameters->initial_condition (space);
     mesh_Set (mesh, 0, space_point, temperature);
   }
+  const int visited = solution_visitor (parameters, mesh, 0);
+  if (visited != 0)
+  {
+    fprintf (stderr, "Error: something went wrong during solving.\n");
+
+    return visited;
+  }
 
   const real_type time_step = parameters->time_max / (real_type) parameters->time_points;
   const real_type space_step = parameters->space_max / (real_type) parameters->space_points;
@@ -291,10 +316,11 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
 int
 dumpSolution_Stdout (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point)
 {
-  fprintf (stdout, "%zu\n", time_point);
-  mesh_Print (mesh, stdout, "\t% f");
-//  mesh_PrintTimePoint (mesh, stdout, "\t% f", time_point);
-  fprintf (stdout, "\n\n");
+  fprintf (stdout, "time_point=%zu;\n", time_point);
+  mesh_Print (mesh, stdout, "%f");
+//  mesh_Print_Formatted (mesh, stdout, "\t% f");
+//  mesh_Print_Formatted_AtTimePoint (mesh, stdout, "\t% f", time_point);
+  fprintf (stdout, ";\n\n");
 
   return 0;
 }
@@ -324,12 +350,12 @@ dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mes
 
   fprintf (output, "# ");
   parameters_Print (parameters, output);
-  fprintf (output, "\n");
+  fprintf (output, ";\n");
   const real_type time = lerp (
     (real_type) time_point, 0.0, (real_type) (parameters->time_points - 1), 0.0, parameters->time_max
   );
-  fprintf (output, "# time_point:%zu;time:%f\n", time_point, time);
-  fprintf (output, "# space;temperature\n");
+  fprintf (output, "# time=%f;time_point=%zu;\n", time, time_point);
+  fprintf (output, "# space;temperature;\n");
 
   for (size_t space_point = 0; space_point < parameters->space_points; ++ space_point)
   {
@@ -373,8 +399,7 @@ initialCondition (real_type space)
 int
 main (int argc, char * argv [])
 {
-//  const struct Parameters * const parameters = parameters_Construct (1.0, sin, 2.0, 2.0, 10.0, 0.1, 1000, 6);
-  const struct Parameters * const parameters = parameters_Construct (1.0, initialCondition, 1.0, - 1.0, 1.0, 5.0 * PI, 1000, 100);
+  struct Parameters * const parameters = parameters_Construct (1.0, initialCondition, 1.0, - 1.0, 5.0, 5.0 * PI, 1000 + 1, 100);
   if (parameters == NULL)
   {
     fprintf (stderr, "Error: couldn't allocate memory for parameters.\n");
