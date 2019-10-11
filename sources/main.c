@@ -1,4 +1,5 @@
 #include <assert.h>  // assert
+#include <float.h>  // FLT_DECIMAL_DIG
 #include <math.h>  // pow, sin
 #include <stddef.h>  // size_t, NULL
 #include <stdio.h>  // fclose, fflush, fopen, fprintf, sprintf, stderr, stdout, FILE
@@ -61,16 +62,16 @@ mesh_Destroy (struct Mesh * mesh)
 }
 
 
-size_t
+inline size_t
 mesh_PointIndex (const struct Mesh * mesh, size_t time_point, size_t space_point)
 {
   assert (mesh != NULL);
 
-  return ((time_point % mesh->time_points) * mesh->space_points) + space_point;
+  return time_point % mesh->time_points * mesh->space_points + space_point;
 }
 
 
-real_type
+inline real_type
 mesh_Get (const struct Mesh * mesh, size_t time_point, size_t space_point)
 {
   assert (mesh != NULL);
@@ -79,7 +80,7 @@ mesh_Get (const struct Mesh * mesh, size_t time_point, size_t space_point)
 }
 
 
-void
+inline void
 mesh_Set (const struct Mesh * mesh, size_t time_point, size_t space_point, real_type new_value)
 {
   assert (mesh != NULL);
@@ -118,7 +119,7 @@ mesh_Print_Formatted (const struct Mesh * mesh, FILE * file, const char * restri
       fprintf (file, format, mesh_Get (mesh, time_point, space_point));
     }
 
-    if (time_point != (mesh->time_points - 1))
+    if (time_point != mesh->time_points - 1)
     {
       fprintf (file, "\n");
     }
@@ -127,7 +128,9 @@ mesh_Print_Formatted (const struct Mesh * mesh, FILE * file, const char * restri
 
 
 void
-mesh_Print_Formatted_AtTimePoint (const struct Mesh * mesh, FILE * file, const char * restrict format, size_t time_point)
+mesh_Print_Formatted_AtTimePoint (
+  const struct Mesh * mesh, FILE * file, const char * restrict format, size_t time_point
+)
 {
   assert (mesh != NULL);
 
@@ -252,6 +255,12 @@ lerp (real_type x, real_type x_0, real_type x_1, real_type y_0, real_type y_1)
 typedef int solution_visitor_type (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point);
 
 
+#define METHOD_EULER (0)
+#define METHOD_RK_4 (METHOD_EULER + 1)
+//#define METHOD METHOD_EULER
+#define METHOD METHOD_RK_4
+
+
 int
 solve (const struct Parameters * parameters, solution_visitor_type * solution_visitor)
 {
@@ -286,18 +295,93 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
 
   const real_type time_step = parameters->time_max / (real_type) parameters->time_points;
   const real_type space_step = parameters->space_max / (real_type) parameters->space_points;
-  const real_type r = time_step / pow (space_step, 2.0);
+#if METHOD == METHOD_EULER
+  const real_type r = parameters->diffusivity * (time_step / pow (space_step, 2.0));
   assert (r <= 0.5);
+#endif  // METHOD == METHOD_EULER
   for (size_t time_point = 1; time_point < parameters->time_points; ++ time_point)
   {
     mesh_Set (mesh, time_point, 0, parameters->boundary_condition_0);
     mesh_Set (mesh, time_point, mesh->space_points - 1, parameters->boundary_condition_1);
     for (size_t space_point = 1; space_point < mesh->space_points - 1; ++ space_point)
     {
-      const real_type temperature = (1.0 - 2.0 * r) * mesh_Get (mesh, time_point - 1, space_point)
-        + r * mesh_Get (mesh, time_point - 1, space_point - 1)
-        + r * mesh_Get (mesh, time_point - 1, space_point + 1);
+#if METHOD == METHOD_EULER
+      /*
+       * Forward-time central-space scheme.
+       * Time:  1st order forward difference  (explicit Euler method aka explicit 1-st order Runge-Kutta method).
+       * Space:  2nd order central difference.
+       */
+/*      const real_type temperature =
+          mesh_Get (mesh, time_point - 1, space_point)
+        + time_step
+        * parameters->diffusivity
+        * (
+                    mesh_Get (mesh, time_point - 1, space_point - 1)
+            - 2.0 * mesh_Get (mesh, time_point - 1, space_point    )
+            +       mesh_Get (mesh, time_point - 1, space_point + 1)
+          )
+        / pow (space_step, 2.0);*/
+      const real_type temperature =
+          (1.0 - 2.0 * r) * mesh_Get (mesh, time_point - 1, space_point    )
+        +              r  * mesh_Get (mesh, time_point - 1, space_point - 1)
+        +              r  * mesh_Get (mesh, time_point - 1, space_point + 1);
       mesh_Set (mesh, time_point, space_point, temperature);
+#elif METHOD == METHOD_RK_4
+      /**
+       * Time:  explicit 4-th order Runge-Kutta method.
+       * Space:  2nd order central difference.
+       */
+      const real_type k_1 =
+          time_step
+        * parameters->diffusivity
+        * (
+                    mesh_Get (mesh, time_point - 1, space_point - 1)
+            - 2.0 * mesh_Get (mesh, time_point - 1, space_point    )
+            +       mesh_Get (mesh, time_point - 1, space_point + 1)
+          )
+        / pow (space_step, 2.0);
+      const real_type k_2 =
+          time_step
+//        / 2.0
+        * parameters->diffusivity
+        * (
+                    (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_1 / 2.0))
+            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + (k_1 / 2.0))
+            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + (k_1 / 2.0))
+          )
+        / pow (space_step, 2.0);
+      const real_type k_3 =
+          time_step
+//        / 2.0
+        * parameters->diffusivity
+        * (
+                    (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_2 / 2.0))
+            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + (k_2 / 2.0))
+            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + (k_2 / 2.0))
+          )
+        / pow (space_step, 2.0);
+      const real_type k_4 =
+          time_step
+        * parameters->diffusivity
+        * (
+                    (mesh_Get (mesh, time_point - 1, space_point - 1) + k_3)
+            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + k_3)
+            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + k_3)
+          )
+        / pow (space_step, 2.0);
+      const real_type temperature =
+          mesh_Get (mesh, time_point - 1, space_point)
+        + (
+                    k_1
+            + 2.0 * k_2
+            + 2.0 * k_3
+            +       k_4
+          )
+        / 6.0;
+      mesh_Set (mesh, time_point, space_point, temperature);
+#else  // METHOD == METHOD_RK_4
+#error "Unsupported method."
+#endif  // METHOD == METHOD_EULER
     }
 
     const int visited = solution_visitor (parameters, mesh, time_point);
@@ -348,12 +432,13 @@ dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mes
     return - 1;
   }
 
-  fprintf (output, "# ");
-  parameters_Print (parameters, output);
-  fprintf (output, ";\n");
   const real_type time = lerp (
     (real_type) time_point, 0.0, (real_type) (parameters->time_points - 1), 0.0, parameters->time_max
   );
+  fprintf (output, "x \"u(x, %g)\"\n", time);
+  fprintf (output, "# ");
+  parameters_Print (parameters, output);
+  fprintf (output, ";\n");
   fprintf (output, "# time=%f;time_point=%zu;\n", time, time_point);
   fprintf (output, "# space;temperature;\n");
 
@@ -363,7 +448,7 @@ dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mes
       (real_type) space_point, 0.0, (real_type) (mesh->space_points - 1), 0.0, parameters->space_max
     );
     const real_type temperature = mesh_Get (mesh, time_point, space_point);
-    fprintf (output, "%f %f\n", space, temperature);
+    fprintf (output, "%.*f %.*f\n", DECIMAL_DIG, space, DECIMAL_DIG, temperature);
   }
 
   const int flushed = fflush (output);
@@ -406,7 +491,7 @@ main (int argc, char * argv [])
 
     return EXIT_FAILURE;
   }
-  
+
 //  const int solved = solve (parameters, & dumpSolution_Stdout);
   const int solved = solve (parameters, & dumpSolution_File);
   if (solved != 0)
