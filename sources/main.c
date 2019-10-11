@@ -266,8 +266,8 @@ typedef int solution_visitor_type (const struct Parameters * parameters, const s
 #define METHOD_EULER (0)
 #define METHOD_RK_4 (METHOD_EULER + 1)
 
-//#define METHOD METHOD_EULER
-#define METHOD METHOD_RK_4
+#define METHOD METHOD_EULER
+//#define METHOD METHOD_RK_4
 
 
 int
@@ -352,9 +352,9 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
             +       mesh_Get (mesh, time_point - 1, space_point + 1)
           )
         / pow (space_step, 2.0);
+      // TODO.
       const real_type k_2 =
           time_step
-//        / 2.0
         * parameters->diffusivity
         * (
                     (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_1 / 2.0))
@@ -362,9 +362,9 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
             +       (mesh_Get (mesh, time_point - 1, space_point + 1) + (k_1 / 2.0))
           )
         / pow (space_step, 2.0);
+      // TODO.
       const real_type k_3 =
           time_step
-//        / 2.0
         * parameters->diffusivity
         * (
                     (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_2 / 2.0))
