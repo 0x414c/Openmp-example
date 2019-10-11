@@ -19,8 +19,6 @@ set (_TARGET_COMPILE_OPTIONS
 
   -march=native
   -m64
-
-  -fopenmp
 )
 
 set (_TARGET_COMPILE_OPTIONS_DEBUG
@@ -48,6 +46,8 @@ target_compile_definitions (${_TARGET_NAME}
 ## -----------------------------------------------------------------------------
 
 set (_TARGET_LINK_OPTIONS
+  -fopenmp
+
   -static
   -static-libgcc
 )

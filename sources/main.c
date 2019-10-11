@@ -1,9 +1,17 @@
 #include <assert.h>  // assert
-#include <float.h>  // FLT_DECIMAL_DIG
+#include <float.h>  // DECIMAL_DIG
 #include <math.h>  // pow, sin
 #include <stddef.h>  // size_t, NULL
 #include <stdio.h>  // fclose, fflush, fopen, fprintf, sprintf, stderr, stdout, FILE
 #include <stdlib.h>  // malloc, free, EXIT_FAILURE, EXIT_SUCCESS
+
+
+#define WITH_OMP
+
+
+#ifdef WITH_OMP
+#include <omp.h>  // omp_*
+#endif  // WITH_OMP
 
 
 typedef double real_type;
@@ -257,6 +265,7 @@ typedef int solution_visitor_type (const struct Parameters * parameters, const s
 
 #define METHOD_EULER (0)
 #define METHOD_RK_4 (METHOD_EULER + 1)
+
 //#define METHOD METHOD_EULER
 #define METHOD METHOD_RK_4
 
@@ -303,6 +312,9 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
   {
     mesh_Set (mesh, time_point, 0, parameters->boundary_condition_0);
     mesh_Set (mesh, time_point, mesh->space_points - 1, parameters->boundary_condition_1);
+#ifdef WITH_OMP
+#pragma omp parallel for
+#endif  // WITH_OMP
     for (size_t space_point = 1; space_point < mesh->space_points - 1; ++ space_point)
     {
 #if METHOD == METHOD_EULER
@@ -492,6 +504,12 @@ main (int argc, char * argv [])
     return EXIT_FAILURE;
   }
 
+#ifdef WITH_OMP
+  printf (
+    "max_threads=%d;num_threads=%d;num_procs=%d;thread_num=%d;\n",
+    omp_get_max_threads (), omp_get_num_threads (), omp_get_num_procs (), omp_get_thread_num ()
+  );
+#endif //  WITH_OMP
 //  const int solved = solve (parameters, & dumpSolution_Stdout);
   const int solved = solve (parameters, & dumpSolution_File);
   if (solved != 0)
