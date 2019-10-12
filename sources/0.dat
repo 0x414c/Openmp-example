@@ -1,5 +1,5 @@
 x "u(x, 0)"
-# Parameters{boundary_condition_0=1.000000;boundary_condition_1=-1.000000;diffusivity=1.000000;space_max=15.707963;space_points=100;time_max=5.000000;time_points=1001;};
+# Parameters{boundary_condition_0=1.000000000000000000000;boundary_condition_1=-1.000000000000000000000;diffusivity=1.000000000000000000000;space_max=15.707963267948966000000;space_points=100;time_max=5.000000000000000000000;time_points=1001;};
 # time=0.000000;time_point=0;
 # space;temperature;
 0.000000000000000000000 1.000000000000000000000

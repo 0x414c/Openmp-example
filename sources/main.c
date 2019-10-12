@@ -2,15 +2,12 @@
 #include <float.h>  // DECIMAL_DIG
 #include <math.h>  // pow, sin
 #include <stddef.h>  // size_t, NULL
-#include <stdio.h>  // fclose, fflush, fopen, fprintf, sprintf, stderr, stdout, FILE
-#include <stdlib.h>  // malloc, free, EXIT_FAILURE, EXIT_SUCCESS
-
-
-#define WITH_OMP
+#include <stdio.h>  // fclose, fflush, fopen, fprintf, fscanf, printf, sprintf, sscanf, stderr, stdin, stdout, EOF, FILE
+#include <stdlib.h>  // free, malloc, EXIT_FAILURE, EXIT_SUCCESS
 
 
 #ifdef WITH_OMP
-#include <omp.h>  // omp_*
+#include <omp.h>  // omp_get_*
 #endif  // WITH_OMP
 
 
@@ -28,17 +25,30 @@ struct Mesh
 
 
 struct Mesh *
+mesh_Allocate (void)
+{
+  const size_t mesh_bytes = sizeof (struct Mesh);
+  const struct Mesh * const new_mesh = malloc (mesh_bytes);
+  if (new_mesh == NULL)
+  {
+    fprintf (stderr, "Error: couldn't allocate memory for mesh (%zu bytes).\n", mesh_bytes);
+
+    return NULL;
+  }
+
+  return new_mesh;
+}
+
+
+struct Mesh *
 mesh_Construct (size_t time_points, size_t space_points)
 {
   assert (time_points > 1);
   assert (space_points > 0);
 
-  const size_t mesh_bytes = sizeof (struct Mesh);
-  struct Mesh * const new_mesh = malloc (mesh_bytes);
+  struct Mesh * const new_mesh = mesh_Allocate ();
   if (new_mesh == NULL)
   {
-    fprintf (stderr, "Error: couldn't allocate memory for mesh (%zu bytes).\n", mesh_bytes);
-
     return NULL;
   }
 
@@ -63,9 +73,11 @@ mesh_Construct (size_t time_points, size_t space_points)
 void
 mesh_Destroy (struct Mesh * mesh)
 {
-  assert (mesh != NULL);
+  if (mesh != NULL)
+  {
+    free (mesh->points);
+  }
 
-  free (mesh->points);
   free (mesh);
 }
 
@@ -97,55 +109,67 @@ mesh_Set (const struct Mesh * mesh, size_t time_point, size_t space_point, real_
 }
 
 
-void
-mesh_Print (const struct Mesh * mesh, FILE * file, const char * restrict format)
+int
+mesh_Write_File (const struct Mesh * mesh, FILE * output, const char * restrict format)
 {
   assert (mesh != NULL);
+  assert (output != NULL);
+  assert (format != NULL);
 
-  fprintf (file, "Mesh{points={");
+  fprintf (output, "Mesh{points={");
   for (size_t time_point = 0; time_point < mesh->time_points; ++ time_point)
   {
     for (size_t space_point = 0; space_point < mesh->space_points; ++ space_point)
     {
-      fprintf (file, format, mesh_Get (mesh, time_point, space_point));
-      fprintf (file, ";");
+      fprintf (output, format, mesh_Get (mesh, time_point, space_point));
+      fprintf (output, ";");
     }
   }
-  fprintf (file, "};space_points=%zu;time_points=%zu;}", mesh->space_points, mesh->time_points);
+  fprintf (output, "};space_points=%zu;time_points=%zu;}", mesh->space_points, mesh->time_points);
+
+  return 0;
 }
 
 
-void
-mesh_Print_Formatted (const struct Mesh * mesh, FILE * file, const char * restrict format)
+int
+mesh_Write_File_Formatted (const struct Mesh * mesh, FILE * output, const char * restrict format)
 {
   assert (mesh != NULL);
+  assert (output != NULL);
+  assert (format != NULL);
 
   for (size_t time_point = 0; time_point < mesh->time_points; ++ time_point)
   {
     for (size_t space_point = 0; space_point < mesh->space_points; ++ space_point)
     {
-      fprintf (file, format, mesh_Get (mesh, time_point, space_point));
+      fprintf (output, format, mesh_Get (mesh, time_point, space_point));
     }
 
     if (time_point != mesh->time_points - 1)
     {
-      fprintf (file, "\n");
+      fprintf (output, "\n");
     }
   }
+
+  return 0;
 }
 
 
-void
-mesh_Print_Formatted_AtTimePoint (
-  const struct Mesh * mesh, FILE * file, const char * restrict format, size_t time_point
+int
+mesh_Write_File_Formatted_AtTimePoint (
+  const struct Mesh * mesh, FILE * output, const char * restrict format, size_t time_point
 )
 {
   assert (mesh != NULL);
+  assert (output != NULL);
+  assert (format != NULL);
 
   for (size_t space_point = 0; space_point < mesh->space_points; ++ space_point)
   {
-    fprintf (file, format, mesh_Get (mesh, time_point, space_point));
+    fprintf (output, format, mesh_Get (mesh, time_point, space_point));
   }
+
+  return 0;
 }
 
 
@@ -159,6 +183,8 @@ typedef real_type temperature_function_type (real_type);
  * u(L, t) = β₁
  * t ∈ [0, T]
  * x ∈ [0, L]
+ * TODO:  Store initial condition values directly.
+ * TODO:  Infer β₀  &  β₁ from initial condition values.
  */
 struct Parameters
 {
@@ -199,6 +225,22 @@ struct Parameters
 
 
 struct Parameters *
+parameters_Allocate (void)
+{
+  const size_t bytes = sizeof (struct Parameters);
+  const struct Parameters * const new_parameters = malloc (bytes);
+  if (new_parameters == NULL)
+  {
+    fprintf (stderr, "Error: couldn't allocate memory for parameters (%zu bytes).\n", bytes);
+
+    return NULL;
+  }
+
+  return new_parameters;
+}
+
+
+struct Parameters *
 parameters_Construct (
   real_type diffusivity, temperature_function_type * initial_condition,
   real_type boundary_condition_0, real_type boundary_condition_1,
@@ -210,12 +252,9 @@ parameters_Construct (
   assert (time_points > 1);
   assert (space_points > 1);
 
-  const size_t bytes = sizeof (struct Parameters);
-  struct Parameters * const new_parameters = malloc (bytes);
+  struct Parameters * const new_parameters = parameters_Allocate ();
   if (new_parameters == NULL)
   {
-    fprintf (stderr, "Error: couldn't allocate memory for parameters (%zu bytes).\n", bytes);
-
     return NULL;
   }
 
@@ -239,21 +278,75 @@ parameters_Destroy (struct Parameters * parameters)
 }
 
 
-void
-parameters_Print (const struct Parameters * parameters, FILE * output)
+int
+parameters_Write_File (const struct Parameters * parameters, FILE * output)
 {
+  assert (parameters != NULL);
   assert (output != NULL);
 
-  fprintf (
+  return fprintf (
     output,
-    "Parameters{boundary_condition_0=%f;boundary_condition_1=%f;diffusivity=%f;space_max=%f;space_points=%zu;time_max=%f;time_points=%zu;}",
-    parameters->boundary_condition_0, parameters->boundary_condition_1, parameters->diffusivity,
-    parameters->space_max, parameters->space_points, parameters->time_max, parameters->time_points
+    "Parameters{boundary_condition_0=%.*f;boundary_condition_1=%.*f;diffusivity=%.*f;space_max=%.*f;space_points=%zu;time_max=%.*f;time_points=%zu;}",
+    DECIMAL_DIG, parameters->boundary_condition_0, DECIMAL_DIG, parameters->boundary_condition_1,
+    DECIMAL_DIG, parameters->diffusivity, DECIMAL_DIG, parameters->space_max, parameters->space_points,
+    DECIMAL_DIG, parameters->time_max, parameters->time_points
   );
 }
 
 
-real_type
+#define PARAMETERS_STRING_BUFFER_LENGTH (384)
+#define PARAMETERS_MEMBERS_COUNT (7)
+
+
+struct Parameters *
+parameters_Read_File (FILE * input)
+{
+  assert (input != NULL);
+
+  struct Parameters * const new_parameters = parameters_Allocate ();
+  if (new_parameters == NULL)
+  {
+    fprintf (stderr, "Error: couldn't allocate parameters.\n");
+
+    return NULL;
+  }
+
+  static char buffer [PARAMETERS_STRING_BUFFER_LENGTH];
+  size_t buffer_length = 0;
+  const int assigned_buffer = fscanf (input, "%[^\n]%zn", buffer, & buffer_length);
+  if (assigned_buffer != 1) {
+    if (assigned_buffer == EOF) {
+      fprintf (stderr, "Error: unexpected end of input.\n");
+    } else {
+      fprintf (stderr, "Error: blank input.\n");
+    }
+
+    parameters_Destroy (new_parameters);
+
+    return NULL;
+  }
+
+  const int assigned_parameters = sscanf (
+    buffer,
+    "Parameters{boundary_condition_0=%lf;boundary_condition_1=%lf;diffusivity=%lf;space_max=%lf;space_points=%zu;time_max=%lf;time_points=%zu;};",
+    & new_parameters->boundary_condition_0, & new_parameters->boundary_condition_1, & new_parameters->diffusivity,
+    & new_parameters->space_max, & new_parameters->space_points, & new_parameters->time_max,
+    & new_parameters->time_points
+  );
+  if (assigned_parameters != PARAMETERS_MEMBERS_COUNT)
+  {
+    fprintf (stdout, "Error: couldn't assign parameters.\n");
+
+    parameters_Destroy (new_parameters);
+
+    return NULL;
+  }
+
+  return new_parameters;
+}
+
+
+inline real_type
 lerp (real_type x, real_type x_0, real_type x_1, real_type y_0, real_type y_1)
 {
   return y_0 + (x - x_0) * (y_1 - y_0) / (x_1 - x_0);
@@ -263,18 +356,41 @@ lerp (real_type x, real_type x_0, real_type x_1, real_type y_0, real_type y_1)
 typedef int solution_visitor_type (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point);
 
 
-#define METHOD_EULER (0)
-#define METHOD_RK_4 (METHOD_EULER + 1)
+#define METHOD_EULER (1)
+#define METHOD_RK4 (METHOD_EULER + 1)
 
-#define METHOD METHOD_EULER
-//#define METHOD METHOD_RK_4
+
+inline real_type
+f (real_type space_step, real_type time_step, real_type diffusivity, real_type u_0, real_type u_1, real_type u_2)
+{
+  return time_step
+    * diffusivity
+    * (
+                u_0
+        - 2.0 * u_1
+        +       u_2
+      )
+    / pow (space_step, 2.0);
+}
 
 
 int
-solve (const struct Parameters * parameters, solution_visitor_type * solution_visitor)
+solve (
+  const struct Parameters * parameters, solution_visitor_type * before_solution, solution_visitor_type * on_solution
+)
 {
   assert (parameters != NULL);
-  assert (solution_visitor != NULL);
+
+  if (before_solution != NULL)
+  {
+    const int visited = before_solution (parameters, NULL, - 1);
+    if (visited != 0)
+    {
+      fprintf (stderr, "Error: something went wrong.\n");
+
+      return visited;
+    }
+  }
 
   const struct Mesh * const mesh = mesh_Construct (2, parameters->space_points);
   if (mesh == NULL)
@@ -294,12 +410,18 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
     const real_type temperature = parameters->initial_condition (space);
     mesh_Set (mesh, 0, space_point, temperature);
   }
-  const int visited = solution_visitor (parameters, mesh, 0);
-  if (visited != 0)
-  {
-    fprintf (stderr, "Error: something went wrong during solving.\n");
 
-    return visited;
+  if (on_solution != NULL)
+  {
+    const int visited = on_solution (parameters, mesh, 0);
+    if (visited != 0)
+    {
+      fprintf (stderr, "Error: something went wrong.\n");
+
+      mesh_Destroy (mesh);
+
+      return visited;
+    }
   }
 
   const real_type time_step = parameters->time_max / (real_type) parameters->time_points;
@@ -338,12 +460,12 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
         +              r  * mesh_Get (mesh, time_point - 1, space_point - 1)
         +              r  * mesh_Get (mesh, time_point - 1, space_point + 1);
       mesh_Set (mesh, time_point, space_point, temperature);
-#elif METHOD == METHOD_RK_4
+#elif METHOD == METHOD_RK4
       /**
        * Time:  explicit 4-th order Runge-Kutta method.
        * Space:  2nd order central difference.
        */
-      const real_type k_1 =
+/*      const real_type k_1 =
           time_step
         * parameters->diffusivity
         * (
@@ -352,24 +474,22 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
             +       mesh_Get (mesh, time_point - 1, space_point + 1)
           )
         / pow (space_step, 2.0);
-      // TODO.
       const real_type k_2 =
           time_step
         * parameters->diffusivity
         * (
-                    (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_1 / 2.0))
-            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + (k_1 / 2.0))
-            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + (k_1 / 2.0))
+                    (mesh_Get (mesh, time_point - 1, space_point - 1) + k_1 / 2.0)
+            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + k_1 / 2.0)
+            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + k_1 / 2.0)
           )
         / pow (space_step, 2.0);
-      // TODO.
       const real_type k_3 =
           time_step
         * parameters->diffusivity
         * (
-                    (mesh_Get (mesh, time_point - 1, space_point - 1) + (k_2 / 2.0))
-            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + (k_2 / 2.0))
-            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + (k_2 / 2.0))
+                    (mesh_Get (mesh, time_point - 1, space_point - 1) + k_2 / 2.0)
+            - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + k_2 / 2.0)
+            +       (mesh_Get (mesh, time_point - 1, space_point + 1) + k_2 / 2.0)
           )
         / pow (space_step, 2.0);
       const real_type k_4 =
@@ -380,7 +500,31 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
             - 2.0 * (mesh_Get (mesh, time_point - 1, space_point    ) + k_3)
             +       (mesh_Get (mesh, time_point - 1, space_point + 1) + k_3)
           )
-        / pow (space_step, 2.0);
+        / pow (space_step, 2.0);*/
+      const real_type k_1 = f (
+        space_step, time_step, parameters->diffusivity,
+        mesh_Get (mesh, time_point - 1, space_point - 1),
+        mesh_Get (mesh, time_point - 1, space_point    ),
+        mesh_Get (mesh, time_point - 1, space_point + 1)
+      );
+      const real_type k_2 = f (
+        space_step, time_step, parameters->diffusivity,
+        mesh_Get (mesh, time_point - 1, space_point - 1) + k_1 / 2.0,
+        mesh_Get (mesh, time_point - 1, space_point    ) + k_1 / 2.0,
+        mesh_Get (mesh, time_point - 1, space_point + 1) + k_1 / 2.0
+      );
+      const real_type k_3 = f (
+        space_step, time_step, parameters->diffusivity,
+        mesh_Get (mesh, time_point - 1, space_point - 1) + k_2 / 2.0,
+        mesh_Get (mesh, time_point - 1, space_point    ) + k_2 / 2.0,
+        mesh_Get (mesh, time_point - 1, space_point + 1) + k_2 / 2.0
+      );
+      const real_type k_4 = f (
+        space_step, time_step, parameters->diffusivity,
+        mesh_Get (mesh, time_point - 1, space_point - 1) + k_3,
+        mesh_Get (mesh, time_point - 1, space_point    ) + k_3,
+        mesh_Get (mesh, time_point - 1, space_point + 1) + k_3
+      );
       const real_type temperature =
           mesh_Get (mesh, time_point - 1, space_point)
         + (
@@ -391,17 +535,22 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
           )
         / 6.0;
       mesh_Set (mesh, time_point, space_point, temperature);
-#else  // METHOD == METHOD_RK_4
+#else  // METHOD == METHOD_RK4
 #error "Unsupported method."
 #endif  // METHOD == METHOD_EULER
     }
 
-    const int visited = solution_visitor (parameters, mesh, time_point);
-    if (visited != 0)
+    if (on_solution != NULL)
     {
-      fprintf (stderr, "Error: something went wrong during solving.\n");
+      const int visited = on_solution (parameters, mesh, time_point);
+      if (visited != 0)
+      {
+        fprintf (stderr, "Error: something went wrong.\n");
 
-      return visited;
+        mesh_Destroy (mesh);
+
+        return visited;
+      }
     }
   }
 
@@ -410,31 +559,79 @@ solve (const struct Parameters * parameters, solution_visitor_type * solution_vi
 
 
 int
-dumpSolution_Stdout (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point)
+writeSolution_Stdout (const struct Parameters * parameters_, const struct Mesh * mesh, size_t time_point)
 {
   fprintf (stdout, "time_point=%zu;\n", time_point);
-  mesh_Print (mesh, stdout, "%f");
-//  mesh_Print_Formatted (mesh, stdout, "\t% f");
-//  mesh_Print_Formatted_AtTimePoint (mesh, stdout, "\t% f", time_point);
-  fprintf (stdout, ";\n\n");
+  mesh_Write_File (mesh, stdout, "%f");
+//  mesh_Write_File_Formatted (mesh, stdout, "\t% f");
+//  mesh_Write_File_Formatted_AtTimePoint (mesh, stdout, "\t% f", time_point);
+  fprintf (stdout, ";\n");
 
   return 0;
 }
 
 
-#define FILENAME_BUFFER_LENGTH (128)
-#define DUMP_EVERY_NTH (10)
+#define PLOT_EVERY_NTH_SOLUTION (10)
+#define GNUPLOT_SCRIPT_NAME ("plot.gp")
+#define GNUPLOT_SCRIPT_TEMPLATE ( \
+  "set terminal wxt persist\n" \
+  "set xlabel 'Space (x)'\n" \
+  "set ylabel 'Temperature (u(x))'\n" \
+  "#set offsets graph 0.01, 0.01, 0.01, 0.01\n" \
+  "set grid xtics ytics\n" \
+  "set style fill transparent solid 0.333\n" \
+  "filename(x) = sprintf(\"%%d.dat\", x)\n" \
+  "set key autotitle columnhead\n" \
+  "plot for [i = 0:%zu:%zu] filename(i) using 1:2 with lines\n" \
+)
 
 
 int
-dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point)
+writeGnuplotScript_File (const struct Parameters * parameters, const struct Mesh * mesh_, size_t time_point_)
 {
-  if ((time_point % DUMP_EVERY_NTH) != 0)
+  FILE * const output = fopen (GNUPLOT_SCRIPT_NAME, "w");
+  if (output == NULL)
+  {
+    fprintf (stderr, "Error: couldn't open output file (%s).\n", GNUPLOT_SCRIPT_NAME);
+
+    return - 1;
+  }
+
+  fprintf (output, GNUPLOT_SCRIPT_TEMPLATE, parameters->time_points - 1, PLOT_EVERY_NTH_SOLUTION);
+
+  const int flushed = fflush (output);
+  if (flushed != 0)
+  {
+    fprintf (stderr, "Error: couldn't flush output file (%s).\n", GNUPLOT_SCRIPT_NAME);
+
+    return flushed;
+  }
+
+  const int closed = fclose (output);
+  if (closed != 0)
+  {
+    fprintf (stderr, "Error: couldn't close output file (%s).\n", GNUPLOT_SCRIPT_NAME);
+
+    return closed;
+  }
+
+  return 0;
+}
+
+
+#define SOLUTION_FILENAME_BUFFER_LENGTH (48)
+#define WRITE_EVERY_NTH_SOLUTION (10)
+
+
+int
+writeSolution_File (const struct Parameters * parameters, const struct Mesh * mesh, size_t time_point)
+{
+  if (time_point % WRITE_EVERY_NTH_SOLUTION != 0)
   {
     return 0;
   }
 
-  static char filename[FILENAME_BUFFER_LENGTH];
+  static char filename [SOLUTION_FILENAME_BUFFER_LENGTH];
   sprintf (filename, "%zu.dat", time_point);
   FILE * const output = fopen (filename, "w");
   if (output == NULL)
@@ -449,7 +646,7 @@ dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mes
   );
   fprintf (output, "x \"u(x, %g)\"\n", time);
   fprintf (output, "# ");
-  parameters_Print (parameters, output);
+  parameters_Write_File (parameters, output);
   fprintf (output, ";\n");
   fprintf (output, "# time=%f;time_point=%zu;\n", time, time_point);
   fprintf (output, "# space;temperature;\n");
@@ -489,20 +686,41 @@ dumpSolution_File (const struct Parameters * parameters, const struct Mesh * mes
 real_type
 initialCondition (real_type space)
 {
-  return sin (space + (0.5 * PI));
+  return sin (space + 0.5 * PI);
 }
 
 
+#define INPUT_DEFAULT (1)
+#define INPUT_STDIN (INPUT_DEFAULT + 1)
+
+
 int
-main (int argc, char * argv [])
+run (void)
 {
+#if INPUT == INPUT_DEFAULT
   struct Parameters * const parameters = parameters_Construct (1.0, initialCondition, 1.0, - 1.0, 5.0, 5.0 * PI, 1000 + 1, 100);
   if (parameters == NULL)
   {
-    fprintf (stderr, "Error: couldn't allocate memory for parameters.\n");
+    fprintf (stderr, "Error: couldn't allocate memory for parameters, exiting.\n");
 
     return EXIT_FAILURE;
   }
+#elif INPUT == INPUT_STDIN
+  struct Parameters * const parameters = parameters_Read_File (stdin);
+  if (parameters == NULL)
+  {
+    fprintf (stderr, "Error: couldn't read parameters, exiting.\n");
+
+    return EXIT_FAILURE;
+  }
+
+  parameters_Write_File (parameters, stdout);
+  fprintf (stdout, ";\n");
+
+  parameters->initial_condition = initialCondition;
+#else  // INPUT == INPUT_STDIN
+#error "Unsupported input."
+#endif  // INPUT == INPUT_DEFAULT
 
 #ifdef WITH_OMP
   printf (
@@ -510,14 +728,32 @@ main (int argc, char * argv [])
     omp_get_max_threads (), omp_get_num_threads (), omp_get_num_procs (), omp_get_thread_num ()
   );
 #endif //  WITH_OMP
-//  const int solved = solve (parameters, & dumpSolution_Stdout);
-  const int solved = solve (parameters, & dumpSolution_File);
+
+  solution_visitor_type * const before_solution = writeGnuplotScript_File;
+//  solution_visitor_type * const on_solution = writeSolution_Stdout;
+  solution_visitor_type * const on_solution = writeSolution_File;
+  const int solved = solve (parameters, before_solution, on_solution);
   if (solved != 0)
   {
-    fprintf (stderr, "Error: couldn't solve.\n");
+    fprintf (stderr, "Error: couldn't solve, exiting.\n");
+
+    parameters_Destroy (parameters);
+
+    return EXIT_FAILURE;
   }
 
   parameters_Destroy (parameters);
 
   return EXIT_SUCCESS;
+}
+
+
+int
+main (int argc, char * argv [])
+{
+  const int done = run ();
+
+  printf ("Done.\n");
+
+  return done;
 }

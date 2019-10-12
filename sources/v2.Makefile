@@ -1,24 +1,23 @@
-default_target: all
+default_target: test
 
 .PHONY: clean test
 
-CXX = gcc
-CXXFLAGS = -Wpedantic -Wall -Wextra -std=gnu99
-LDFLAGS = -pthread
+CC = gcc
+CFLAGS = -pipe -Wpedantic -Wall -Wextra -std=gnu99 -O3 -DINPUT=INPUT_STDIN -DMETHOD=METHOD_RK4 -DWITH_OMP
+LDFLAGS = -static -static-libgcc -fopenmp
 SOURCE = main.c
 OBJECT = $(SOURCE:.c=.o)
 TARGET = main
-
-all: $(TARGETS)
+TEST = parameters.txt
 
 $(OBJECT): $(SOURCE)
-	$(CXX) $(CXXFLAGS) -c -o $@ $^
+	$(CC) $(CFLAGS) -c -o $@ $^
 
 $(TARGET): $(OBJECT)
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^
 
 clean:
 	rm -f $(OBJECT) $(TARGET)
 
-test: $(TARGET)
-	./$^
+test: $(TARGET) $(TEST)
+	cat $(TEST) | ./$^

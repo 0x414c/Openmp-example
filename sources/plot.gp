@@ -6,4 +6,4 @@ set grid xtics ytics
 set style fill transparent solid 0.333
 filename(x) = sprintf("%d.dat", x)
 set key autotitle columnhead
-plot for [i = 0:1000:100] filename(i) using 1:2 with lines
+plot for [i = 0:1000:10] filename(i) using 1:2 with lines

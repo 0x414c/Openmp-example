@@ -38,9 +38,15 @@ target_compile_options (${_TARGET_NAME}
 
 ## -----------------------------------------------------------------------------
 
+set (_TARGET_COMPILE_DEFINITIONS
+  INPUT=2
+  METHOD=2
+  WITH_OMP
+)
+
 target_compile_definitions (${_TARGET_NAME}
   PRIVATE
-    ${_TARGET_COMPILE_DEFINITIONS_DEBUG}
+    ${_TARGET_COMPILE_DEFINITIONS}
 )
 
 ## -----------------------------------------------------------------------------
